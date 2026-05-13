@@ -70,9 +70,9 @@ async function sendTelegramMessage(message) {
  */
 async function callRemoteAPI() {
   const payload = {
-    username: jhzone995@gmail.com,
-    password: jh@123456,
-    port: 2445
+    username: FC_USERNAME,
+    password: FC_PASSWORD,
+    port: FC_MACHINE_ID
   };
 
   const endpoint = getRandomEndpoint();
