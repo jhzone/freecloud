@@ -1,25 +1,26 @@
-name: FreeCloud Auto Checkin
+name: FreeCloud Playwright Checkin
 
 on:
   schedule:
-    # 每天北京时间 08:00 (UTC 00:00) 运行
     - cron: '0 0 * * *'
-  workflow_dispatch: # 支持手动点击运行
+  workflow_dispatch:
 
 jobs:
   checkin:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
       - name: Install Dependencies
-        run: pip install requests
+        run: |
+          pip install playwright requests
+          playwright install chromium --with-deps
 
       - name: Run Script
         env:
