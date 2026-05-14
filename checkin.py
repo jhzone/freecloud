@@ -1,63 +1,71 @@
-import requests
-import re
 import os
+import asyncio
+from playwright.async_api import async_playwright
 
 # 从 GitHub Secrets 中读取配置
 USERNAME = os.environ.get('FREECLOUD_USER')
 PASSWORD = os.environ.get('FREECLOUD_PASS')
 BASE_URL = "https://panel.freecloud.ltd"
 
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-})
+async def run():
+    async with async_playwright() as p:
+        # 启动浏览器，增加反爬指纹模拟
+        browser = p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={'width': 1920, 'height': 1080}
+        )
+        page = await context.new_page()
 
-def start():
-    try:
-        # 1. 访问登录页获取隐藏的 CSRF Token
-        login_page_res = session.get(f"{BASE_URL}/login")
-        token_match = re.search(r'name="token" value="(.+?)"', login_page_res.text)
-        token = token_match.group(1) if token_match else ""
+        print("正在打开页面并等待 Cloudflare 验证...")
+        try:
+            # 1. 访问首页，等待 CF 验证通过（通常需要 5-10 秒）
+            await page.goto(f"{BASE_URL}/login", wait_until="networkidle")
+            await asyncio.sleep(8) # 给 CF 盾留出足够的加载时间
 
-        # 2. 提交登录请求
-        login_data = {
-            "token": token,
-            "username": USERNAME,
-            "password": PASSWORD
-        }
-        res = session.post(f"{BASE_URL}/dologin.php", data=login_data)
+            # 2. 检查是否进入了登录页面
+            if await page.query_selector('input[name="username"]'):
+                print("✅ 已绕过验证，正在登录...")
+                await page.fill('input[name="username"]', USERNAME)
+                await page.fill('input[name="password"]', PASSWORD)
+                
+                # 点击登录按钮（根据 WHMCS 结构，通常是 id="login" 或 type="submit"）
+                await page.click('input[type="submit"], button[type="submit"]')
+                await page.wait_for_load_state("networkidle")
+            else:
+                print("❌ 未能进入登录页面，可能被 CF 强力拦截。")
+                await browser.close()
+                return
 
-        # 3. 验证是否登录成功
-        if "Logout" in res.text or "退出" in res.text or "clientarea.php" in res.url:
-            print("✅ 登录成功！")
+            # 3. 登录成功后跳转到签到逻辑
+            print("正在检查签到状态...")
+            await page.goto(f"{BASE_URL}/clientarea.php", wait_until="networkidle")
             
-            # 4. 执行签到动作
-            # 注意：根据 WHMCS 插件习惯，签到 URL 通常是以下几种之一，脚本会依次尝试
-            checkin_urls = [
-                f"{BASE_URL}/index.php?m=spotlight_checkin", # 常见插件路径
-                f"{BASE_URL}/clientarea.php?action=checkin",
-                f"{BASE_URL}/plugin.php?id=checkin"
-            ]
-            
-            for url in checkin_urls:
-                check_res = session.get(url)
-                if "签到成功" in check_res.text or "已经签到" in check_res.text:
-                    print(f"🎯 签到结果: {url} 访问成功")
-                    break
-            
-            # 5. 最后访问首页确认积分状态
-            final_res = session.get(f"{BASE_URL}/clientarea.php")
-            # 匹配截图中的积分余额部分
-            balance = re.search(r'您的账户余额为：(.*?)积分', final_res.text)
-            if balance:
-                print(f"💰 当前账户余额: {balance.group(1).strip()} 积分")
-            if "您今天已经签到过了" in final_res.text:
+            content = await page.content()
+            if "您今天已经签到过了" in content:
                 print("✨ 确认结果：今日已完成签到。")
-        else:
-            print("❌ 登录失败，请检查 Secret 中的账号密码是否正确。")
+            else:
+                print("🎯 正在执行签到点击...")
+                # 尝试点击签到按钮（这里使用了常见的签到按钮文字匹配）
+                checkin_btn = await page.get_by_text("签到", exact=False)
+                if await checkin_btn.is_visible():
+                    await checkin_btn.click()
+                    await asyncio.sleep(3)
+                    print("✅ 签到动作已触发")
+                else:
+                    # 如果找不到按钮，尝试访问已知的 Action URL
+                    await page.goto(f"{BASE_URL}/clientarea.php?action=checkin")
+                    print("✅ 已尝试通过 URL 触发签到")
 
-    except Exception as e:
-        print(f"⚠️ 脚本运行出错: {str(e)}")
+            # 4. 最终检查余额
+            await page.goto(f"{BASE_URL}/clientarea.php", wait_until="networkidle")
+            final_content = await page.content()
+            print("任务完成，请在日志中确认状态。")
+
+        except Exception as e:
+            print(f"⚠️ 运行出错: {str(e)}")
+        finally:
+            await browser.close()
 
 if __name__ == "__main__":
-    start()
+    asyncio.run(run())
