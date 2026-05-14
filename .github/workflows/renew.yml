@@ -1,32 +1,28 @@
-name: 续费
+name: FreeCloud Auto Checkin
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *"
+    # 每天北京时间 08:00 (UTC 00:00) 运行
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 支持手动点击运行
 
 jobs:
-  renew:
+  checkin:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          node-version: '20'
+          python-version: '3.9'
 
       - name: Install Dependencies
-        run: npm install 
+        run: pip install requests
 
-      - name: Run JS Renew Script
-        run: node renew.js
+      - name: Run Script
         env:
-          FC_USERNAME: ${{ secrets.FC_USERNAME }}
-          FC_PASSWORD: ${{ secrets.FC_PASSWORD }}
-          FC_MACHINE_ID: ${{ secrets.FC_MACHINE_ID }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN}}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          FC_ACCOUNTS: ${{secrets.FC_ACCOUNTS}}
+          FREECLOUD_USER: ${{ secrets.FREECLOUD_USER }}
+          FREECLOUD_PASS: ${{ secrets.FREECLOUD_PASS }}
+        run: python checkin.py
